@@ -292,7 +292,7 @@ const Assistant = async () => {
 // 智普AI
 const AI = async (content) => {
   try {
-    const apiKey = '0ebc759c7f704a1cabd584560b64b2ad.l82b4mWFHcwu1otH';
+    const apiKey = ''; // 替换为实际的 API Key
     const model = 'glm-4-plus'; // 请填写您要调用的模型名称
 
     const messages = [
