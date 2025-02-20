@@ -4,18 +4,25 @@ import {
   Mesh,
   PerspectiveCamera,
   WebGLRenderer,
-  AmbientLight, PlaneGeometry, MeshPhysicalMaterial, SpotLight, CylinderGeometry, DoubleSide, Vector2, Raycaster
+  AmbientLight, PlaneGeometry, MeshPhysicalMaterial, SpotLight, CylinderGeometry, DoubleSide, Vector2, Raycaster,PointLight
 } from "three"
 import { Scene } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
-import Lamborghini from '../assets/Lamborghini.00aaaf55.glb'
+import Lamborghini from '../assets/glb/Lamborghini.00aaaf55.glb'
+import girl from "../assets/glb/chinese girl.glb"
+import girl1 from "../assets/glb/business_girl.glb"
+import girl2 from "../assets/glb/psylocke_-fortnite.glb"
+import girl3 from "../assets/glb/scifi_girl_v.01.glb"
+import girl4 from "../assets/glb/sexy_toon_girl_model_2_tina_6.glb"
 import GUI from 'lil-gui';
 import TWEEN from '@tweenjs/tween.js';
-import axios from "axios";
 import icon from "../assets/语音.png"
-import {ref} from "vue";
+import {ref,watch} from "vue";
 import { useRouter } from 'vue-router';
+import {fetchImages} from "@/api/api.js";
+
+let carModel = null;
 let scene, camera, renderer, controls;
 let doors = []
 let carStatus;
@@ -24,10 +31,48 @@ let transcript = ref(''); // 添加 transcript 变量
 let isRecording = ref(false); // 添加 isRecording 状态
 let recognition = null; // 语音识别实例
 import { ElMessage } from 'element-plus';
+// 图片信息
+let images = ref([]);
+// 男生信息
+const boyImages = ref([])
+// 女生信息
+const girlImages = ref([])
+// 动物信息
+const animals = ref([])
+// 抽屉
+const drawer = ref(false)
+// 标签页
+const activeName = ref('first')
+const handleClick = async (tab, value) => {
+  if (tab === 'first' && value === true){
+    try {
+      let response = await fetchImages();
+      images.value = response.data
+      // 过滤出 sex 为 '1' 的图像
+      boyImages.value = images.value.filter(image => image.sex === '1');
+    }catch (error){
+      ElMessage.error('请求错误！')
+    }
+  }else if (tab === 'second'){
+    // 过滤出 sex 为 '2' 的图像
+    girlImages.value = images.value.filter(image =>image.sex === '0');
+  }else if (tab === 'third'){
+    // 过滤出 sex 为 '3' 的图像
+    animals.value = images.value.filter(image => image.sex === '2')
+  }
+}
+
+// 监听函数
+watch([activeName,drawer], ([newActiveName,newDrawer]) => {
+  let tab = newActiveName;
+  let value = newDrawer;
+  handleClick(tab, value);
+}, { immediate: true });
+
 const router = useRouter();
 // 车身材质
 let bodyMaterial = new THREE.MeshPhysicalMaterial({
-  color: "#6e2121",
+  // map:boyImages,
   metalness: 1,
   roughness: 0.5,
   // 透明图层强度
@@ -87,16 +132,17 @@ function initOrbitControls(){
   controls.minPolarAngle = 0
   controls.maxPolarAngle = 80 / 360 * 2 * Math.PI
 }
-
 // 绘制汽车模型
 function loadCarModel(){
   isLoading.value = true
-  new GLTFLoader().load(Lamborghini,function (gltf){
-    const carModel = gltf.scene
-    carModel.rotation.y = Math.PI
-
+  new GLTFLoader().load(girl,function (gltf){
+    carModel = gltf.scene
+    carModel.rotation.y = Math.PI * 0.7
+    // carModel.castShadow = true
     carModel.traverse(obj => {
-      if (obj.name === 'Object_103' || obj.name == 'Object_64' || obj.name == 'Object_77') {
+      // console.log(typeof (obj.name))
+      if (obj.name === "Sub_0_a2:lambert16SG1_0") {
+        console.log(obj.name)
         // 车身
         obj.material = bodyMaterial
 
@@ -106,13 +152,10 @@ function loadCarModel(){
       } else if (obj.name === 'Empty001_16' || obj.name === 'Empty002_20') {
         // 门
         doors.push(obj)
-        console.log(obj)
       }
       // 产生阴影
       obj.castShadow = true
     })
-    // 初始化音频分析
-    setupAudioAnalysis();
     scene.add(carModel)
     isLoading.value = false
   })
@@ -121,8 +164,15 @@ function loadCarModel(){
 
 // 绘制光源
 function initLight(){
-  const ambientLight= new AmbientLight('#fff',0.5)
-  scene.add(ambientLight)
+  // 添加环境光
+  const ambientLight = new AmbientLight(0xffffff, 0.5);
+  scene.add(ambientLight);
+
+// 添加点光源
+  const pointLight = new PointLight(0xffffff, 1, 100);
+  pointLight.position.set(50, 50, 50);
+  scene.add(pointLight);
+
 }
 // 绘制地板
 function initFloor(){
@@ -132,7 +182,7 @@ function initFloor(){
   const material = new MeshPhysicalMaterial({
     // 双面绘制
     side:DoubleSide,
-    color:0x808080,
+    color:0xFFFFFF,
     // 金属0 不金属1
     metalness:0,
     // 粗糙度,越小越光滑
@@ -147,7 +197,7 @@ function initFloor(){
 }
 // 绘制聚光灯
 function initSpotLight(){
-  const spotLight = new SpotLight(0xffffff, 0.5)
+  const spotLight = new SpotLight(0xffffff, 1)
   spotLight.angle = Math.PI / 8; //散射角度，跟水平线的家教
   spotLight.penumbra = 0.2;  // 聚光锥的半影衰减百分比
   spotLight.decay = 2; // 纵向：沿着光照距离的衰减量。
@@ -167,7 +217,7 @@ function initSpotLight(){
 function initCylinder(){
   const geometry = new CylinderGeometry(10, 10, 20, 20)
   const material= new MeshPhysicalMaterial({
-    color: 0x6c6c6c,
+    color: 0xFFFFFF,
     side: DoubleSide
   })
   const cylinder = new Mesh(geometry, material)
@@ -177,42 +227,42 @@ let gui = null;
 // 绘制右侧面板
 function initGUI(){
   let obj = {
-    bodyColor:"#6e2121",
+    bodyColor:"#ffffff",
     glassColor:"#793e3e",
     tireColor:"#000000",
     carOpen,
     carClose,
     carIn,
     carOut,
-    VoicePlayback,
     loadCarModel,
-    Assistant,
-    singing,
     goFireworks
   }
   gui = new GUI()
-  gui.addColor(obj,"bodyColor").name('车身颜色').onChange(value => {
-    bodyMaterial.color.set(value)
-  })
-  gui.addColor(obj,"glassColor").name('玻璃颜色').onChange(value => {
-    glassMaterial.color.set(value)
-  })
-  gui.addColor(obj,"tireColor").name('轮胎颜色').onChange(value => {
-    tireMaterial.color.set(value)
-  })
-  gui.add(obj, "carOpen").name('打开车门')
-  gui.add(obj, "carClose").name('关门车门')
+  if(gui){
+    gui.addColor(obj,"bodyColor").name('车身颜色').onChange(value => {
+      bodyMaterial.color.set(value)
+    })
+    gui.addColor(obj,"glassColor").name('玻璃颜色').onChange(value => {
+      glassMaterial.color.set(value)
+    })
+    gui.addColor(obj,"tireColor").name('轮胎颜色').onChange(value => {
+      tireMaterial.color.set(value)
+    })
+    gui.add(obj, "carOpen").name('打开车门')
+    gui.add(obj, "carClose").name('关门车门')
 
-  gui.add(obj, "carIn").name('车内视角')
-  gui.add(obj, "carOut").name('车外视角')
-  gui.add(obj, "VoicePlayback").name('语音播报')
-  gui.add(obj, "loadCarModel").name('加载模型')
-  gui.add(obj,"Assistant").name('语音助手')
-  gui.add(obj,"singing").name('唱歌')
-  gui.add(obj,"goFireworks").name('生成烟花')
+    gui.add(obj, "carIn").name('车内视角')
+    gui.add(obj, "carOut").name('车外视角')
+    gui.add(obj, "loadCarModel").name('加载模型')
+    gui.add(obj,"goFireworks").name('生成烟花')
+  }else {
+    gui.add(obj, "loadCarModel").name('加载模型')
+    gui.add(obj,"goFireworks").name('生成烟花')
+  }
   // 默认关闭
   gui.close()
 }
+
 // 打开车门
 function carOpen(){
   carStatus = 'open'
@@ -239,11 +289,11 @@ function setAnimationDoor(start,end,mesh){
 
 // 车内视角
 function carIn(){
-  setAnimationCamera({ cx: 4.25, cy: 1.4, cz: -4.5, ox: 0, oy: 0.5, oz: 0 }, { cx: -0.27, cy: 0.83, cz: 0.60, ox: 0, oy: 0.5, oz: -3 });
+  setAnimationCamera({ cx: 4.25, cy: 1.4, cz: -4.5, ox: 0, oy: 0.5, oz: 0 }, { cx: -0.27, cy: 1.83, cz: 1.60, ox: 0, oy: 0.5, oz: -3 });
 }
 // 车外视角
 function carOut(){
-  setAnimationCamera({ cx: -0.27, cy: 0.83, cz: 0.6, ox: 0, oy: 0.5, oz: -3 }, { cx: 4.25, cy: 1.4, cz: -4.5, ox: 0, oy: 0.5, oz: 0 });
+  setAnimationCamera({ cx: -0.27, cy: 1.83, cz: 1.60, ox: 0, oy: 0.5, oz: -3 }, { cx: 4.25, cy: 1.4, cz: -4.5, ox: 0, oy: 0.5, oz: 0 });
 }
 // 车内外动画
 function setAnimationCamera(start,end){
@@ -255,219 +305,7 @@ function setAnimationCamera(start,end){
   })
   Camera.start()
 }
-// 语音助手
-const Assistant = async () => {
-  if(('webkitSpeechRecognition' in window)){
-    recognition = new webkitSpeechRecognition();
-    recognition.lang = 'zh-CN'; // 设置语言为中文
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
 
-    recognition.onstart = () => {
-      ElMessage.info('语音识别')
-      console.log('语音识别已开始...');
-      isRecording.value = true;
-    };
-
-    recognition.onresult = async (event) => {
-      // 获取用户想说的话
-      transcript.value = event.results[0][0].transcript;
-      // 把用户说的话传给AI
-      let message = await AI(transcript.value)
-      // console.log(message)
-      // 把AI说的话进行朗读
-      readTextFromFile(message)
-    };
-
-    recognition.onerror = (event) => {
-      console.error('语音识别错误:', event.error);
-      stopRecording();
-    };
-
-    recognition.onend = () => {
-      console.log('语音识别已结束');
-      stopRecording();
-    };
-
-    recognition.start();
-  } else {
-    console.error('浏览器不支持 这个功能');
-  }
-}
-// 检测声音
-// 设置检测说话声的阈值
-let speakingThreshold = 0.15;
-
-// 获取麦克风权限并返回音频流
-async function getMicrophoneStream() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    return stream;
-  } catch (error) {
-    console.error('获取麦克风权限失败:', error);
-    throw error;
-  }
-}
-
-// 设置AudioContext和AnalyserNode进行音频分析
-async function setupAudioAnalysis() {
-  // 获取音频流
-  const stream = await getMicrophoneStream();
-  // 创建AudioContext
-  const audioContext = new AudioContext();
-  // 创建MediaStreamAudioSourceNode
-  const source = audioContext.createMediaStreamSource(stream);
-  // 创建AnalyserNode
-  const analyser = audioContext.createAnalyser();
-
-  // 设置AnalyserNode的参数
-  analyser.fftSize = 2048; // 快速傅里叶变换的大小
-  analyser.minDecibels = -90; // 最小分贝值
-  analyser.maxDecibels = -10; // 最大分贝值
-  analyser.smoothingTimeConstant = 0.85; // 平滑时间常数
-
-  // 连接音频流到AnalyserNode
-  source.connect(analyser);
-
-  // 获取数据数组的长度
-  const bufferLength = analyser.frequencyBinCount;
-  // 创建一个Float32Array来存储音频数据
-  const dataArray = new Float32Array(bufferLength);
-
-  // 实时分析音频数据
-  function analyzeAudio() {
-    // 使用requestAnimationFrame实现实时分析
-    requestAnimationFrame(analyzeAudio);
-
-    // 获取时间域数据
-    analyser.getFloatTimeDomainData(dataArray);
-    // 计算音量
-    const volume = calculateVolume(dataArray);
-    console.log('音量:', volume);
-
-    // 根据音量判断是否在说话
-    if (volume > speakingThreshold) { // 使用阈值0.15
-      console.log('用户在说话');
-    } else {
-      console.log('用户没有说话');
-    }
-  }
-
-  // 开始分析音频
-  analyzeAudio();
-}
-
-// 计算音频信号的均方根（RMS）值
-function calculateVolume(dataArray) {
-  let sum = 0;
-  for (let i = 0; i < dataArray.length; i++) {
-    sum += dataArray[i] * dataArray[i];
-  }
-  return Math.sqrt(sum / dataArray.length);
-}
-
-
-// 智普AI
-const AI = async (content) => {
-  try {
-    const apiKey = '0ebc759c7f704a1cabd584560b64b2ad.l82b4mWFHcwu1otH'; // 替换为实际的 API Key
-    const model = 'glm-4-plus'; // 请填写您要调用的模型名称
-
-    const messages = [
-      {"role": "user", "content": content},
-    ];
-
-    const requestData = {
-      model: model,
-      messages: messages
-    };
-    isLoading.value = true
-    const response = await axios({
-      method: 'POST',
-      url: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', // 请将此 URL 替换为实际的 API 地址
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      data: requestData
-    })
-    console.log(response.data.choices[0].message.content)
-    return response.data.choices[0].message.content;
-  }catch (err){
-    console.error('读取文件时出错:', error);
-  }finally {
-    isLoading.value = false;
-  }
-}
-
-// 语音播报
-const readTextFromFile = async (text) => {
-  // console.log(text)
-  isLoading.value = true
-  try {
-    const response = await axios.post('/tts',null,{
-      params: {
-        text: text,
-        voice: '1031.pt',
-        temperature: "0.2",
-        top_p: "0.05",
-        top_k: "20",
-        custom_voice: "2000"
-      },
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8'
-      }
-    });
-    isLoading.value = false
-    const file = response.data.url;
-
-    // 创建Audio对象并播放文件
-    const audio = new Audio(file);
-    audio.play().then(() => {
-      console.log('音频开始播放');
-    }).catch(error => {
-      console.error('播放音频时出错:', error);
-    });
-
-  } catch (error) {
-    console.error('读取文件时出错:', error);
-  }
-};
-
-// 停止录音
-function stopRecording() {
-  if (recognition) {
-    recognition.stop();
-  }
-  isRecording.value = false;
-}
-
-// 切换录音状态
-function toggleRecording() {
-  if (isRecording.value) {
-    stopRecording();
-  } else {
-    Assistant();
-  }
-}
-
-
-
-
-/**
- * 2025-2-18
- * 1.新增路由
- *  增加模型路由和烟花路由
- * 2.新增烟花页面
- *    让手机和电脑上能全屏展示烟花动画
- * 3.移除掉vue3中的Devtools
- * 4.上传代码到gitee上，让任何人都可以访问
- * @returns {Promise<void>}
- */
-// 唱歌
-const  singing = async () => {
-  const response = await axios.get('/singing')
-}
 // 跳转到烟花页面
 function goFireworks() {
   router.push('/fireworks');
@@ -475,102 +313,6 @@ function goFireworks() {
     gui.destroy();
   }
 }
-
-
-// VoicePlayback 函数
-function VoicePlayback() {
-  readTextFromFile(); // 读取文本文件并进行语言播报
-}
-// 绘制聚光灯
-function createSpotlight(color) {
-  const newObj = new THREE.SpotLight(color, 2);
-  newObj.castShadow = true;
-  newObj.angle = Math.PI / 6;
-  newObj.penumbra = 0.2;
-  newObj.decay = 2;
-  newObj.distance = 50;
-  return newObj;
-}
-
-// // 绘制图片墙
-// function initMessiLight(){
-//   const spotLight1 = createSpotlight('#ffffff');
-//   const texture = new TextureLoader().load(messi)
-//
-//   spotLight1.position.set(0, 3, 0);
-//   spotLight1.target.position.set(-10, 3, 10)
-//
-//   spotLight1.map = texture
-//   let lightHelper1 = new THREE.SpotLightHelper(spotLight1);
-//   scene.add(spotLight1);
-// }
-// function initMutilColor() {
-//   //创建三色光源
-//   rectLight1 = new THREE.RectAreaLight(0xff0000, 50, 1, 10);
-//   rectLight1.position.set(15, 10, 15);
-//   rectLight1.rotation.x = -Math.PI / 2
-//   rectLight1.rotation.z = -Math.PI / 4
-//   scene.add(rectLight1);
-//
-//
-//   rectLight2 = new THREE.RectAreaLight(0x00ff00, 50, 1, 10);
-//   rectLight2.position.set(13, 10, 13);
-//   rectLight2.rotation.x = -Math.PI / 2
-//   rectLight2.rotation.z = -Math.PI / 4
-//   scene.add(rectLight2);
-//
-//
-//   rectLight3 = new THREE.RectAreaLight(0x0000ff, 50, 1, 10);
-//   rectLight3.position.set(11, 10, 11);
-//   rectLight3.rotation.x = -Math.PI / 2
-//   rectLight3.rotation.z = -Math.PI / 4
-//   scene.add(rectLight3);
-//
-//   scene.add(new RectAreaLightHelper(rectLight1));
-//   scene.add(new RectAreaLightHelper(rectLight2));
-//   scene.add(new RectAreaLightHelper(rectLight3));
-//
-//
-//   startColorAnim()
-// }
-//
-//
-// function startColorAnim() {
-//   let carTween = new TWEEN.Tween({ x: -5 }).to({ x: 25 }, 2000).easing(TWEEN.Easing.Quadratic.Out);
-//   carTween.onUpdate(function (that) {
-//     rectLight1.position.set(15 - that.x, 10, 15 - that.x)
-//     rectLight2.position.set(13 - that.x, 10, 13 - that.x)
-//     rectLight3.position.set(11 - that.x, 10, 11 - that.x)
-//   });
-//   carTween.onComplete(function (that) {
-//     rectLight1.position.set(-15, 10, 15);
-//     rectLight2.position.set(-13, 10, 13);
-//     rectLight3.position.set(-11, 10, 11);
-//
-//     rectLight1.rotation.z = Math.PI / 4
-//     rectLight2.rotation.z = Math.PI / 4
-//     rectLight3.rotation.z = Math.PI / 4
-//   })
-//   carTween.repeat(10)
-//
-//
-//   let carTween2 = new TWEEN.Tween({ x: -5 }).to({ x: 25 }, 2000).easing(TWEEN.Easing.Quadratic.Out);
-//   carTween2.onUpdate(function (that) {
-//     rectLight1.position.set(-15 + that.x, 10, 15 - that.x)
-//     rectLight2.position.set(-13 + that.x, 10, 13 - that.x)
-//     rectLight3.position.set(-11 + that.x, 10, 11 - that.x)
-//   });
-//   carTween2.onComplete(function (that) {
-//     rectLight1.position.set(15, 10, 15);
-//     rectLight2.position.set(13, 10, 13);
-//     rectLight3.position.set(11, 10, 11);
-//     rectLight1.rotation.z = - Math.PI / 4
-//     rectLight2.rotation.z = - Math.PI / 4
-//     rectLight3.rotation.z = - Math.PI / 4
-//   })
-//
-//   carTween.start();
-// }
 
 function init(){
   initscene()
@@ -582,8 +324,6 @@ function init(){
   initSpotLight()
   initCylinder()
   initGUI()
-  // initMessiLight()
-  // initMutilColor()
 }
 
 
@@ -628,15 +368,127 @@ window.addEventListener('click',function (event){
   })
 })
 
+const boyClick = (image) =>{
+  console.log(image)
+  // console.log(typeof image)
+ if (image === 1){
+   isLoading.value = true
+   new GLTFLoader().load(girl1,function (gltf){
+     carModel = gltf.scene;
+     carModel.rotation.y = Math.PI * 0.7
+     carModel.traverse(obj => {
+       // console.log(obj)
+       if (obj.name === 'Object_103' || obj.name == 'Object_64' || obj.name == 'Object_77') {
+         // 车身
+         obj.material = bodyMaterial
+
+       } else if (obj.name === 'Object_90') {
+         // 玻璃
+         obj.material = glassMaterial
+       } else if (obj.name === 'Empty001_16' || obj.name === 'Empty002_20') {
+         // 门
+         doors.push(obj)
+       }
+       // 产生阴影
+       obj.castShadow = true
+     })
+     scene.add(carModel)
+     isLoading.value = false
+   })
+ }
+}
+const girlClick = (image) =>{
+  if (image.id === '1'){
+    isLoading.value = true
+    new GLTFLoader().load(girl,function (gltf){
+      carModel = gltf.scene
+      carModel.rotation.y = Math.PI
+
+      carModel.traverse(obj => {
+        if (obj.name === 'Object_103' || obj.name == 'Object_64' || obj.name == 'Object_77') {
+          // 车身
+          obj.material = bodyMaterial
+
+        } else if (obj.name === 'Object_90') {
+          // 玻璃
+          obj.material = glassMaterial
+        } else if (obj.name === 'Empty001_16' || obj.name === 'Empty002_20') {
+          // 门
+          doors.push(obj)
+        }
+        // 产生阴影
+        obj.castShadow = true
+      })
+      scene.add(carModel)
+      isLoading.value = false
+    })
+  }
+}
 </script>
 
 <template>
-  <div v-if="isLoading" class="loading-overlay">
-    <div class="loading-spinner"></div>
-  </div>
-  <div class="voice-assistant">
-    <img :src="icon" :class="{ 'recording': isRecording }" @click="toggleRecording" alt="语音" />
-  </div>
+ <div>
+   <div v-if="isLoading" class="loading-overlay">
+     <div class="loading-spinner"></div>
+   </div>
+   <div class="voice-assistant">
+     <img :src="icon" :class="{ 'recording': isRecording }" @click="toggleRecording" alt="语音" />
+   </div>
+   <el-button type="info" style="position: absolute;bottom: 16px;right: 16px; " @click="drawer = true">
+     更多角色
+   </el-button>
+
+   <el-drawer v-model="drawer" title="I am the title" :with-header="false">
+     <el-tabs
+         v-model="activeName"
+         type="card"
+         class="demo-tabs"
+         @tab-click="handleClick"
+     >
+       <el-tab-pane label="男生" name="first">
+         <div class="image-grid">
+           <div v-for="(image) in boyImages" :key="image.id" class="image-container">
+              <div>
+                <img
+                    :alt="image.alt"
+                    @click="boyClick(image.id)"
+                />
+                <p>{{ image.name }}</p>
+              </div>
+           </div>
+         </div>
+       </el-tab-pane>
+       <el-tab-pane label="女生" name="second">
+         <div class="image-grid">
+           <div v-for="(image) in girlImages" :key="image.id" class="image-container">
+             <div>
+               <img
+                   :alt="image.alt"
+                   @click="girlClick(image.id)"
+               />
+               <p>{{ image.name }}</p>
+             </div>
+           </div>
+         </div>
+       </el-tab-pane>
+       <el-tab-pane label="动物" name="third">
+         <div class="image-grid">
+           <div v-for="(image) in animals" :key="image.id" class="image-container">
+             <div>
+               <img
+                   :alt="image.alt"
+                   @click="boyClick(image.id)"
+               />
+               <p>{{ image.name }}</p>
+             </div>
+           </div>
+         </div>
+       </el-tab-pane>
+       <el-tab-pane label="创建角色" name="fourth">
+       </el-tab-pane>
+     </el-tabs>
+   </el-drawer>
+ </div>
 </template>
 
 <style scoped>
@@ -688,5 +540,35 @@ window.addEventListener('click',function (event){
     width: 20px;
     height: 20px;
   }
+}
+
+.image-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-around;
+}
+
+.image-container {
+  flex: 0 0 calc(33.333% - 20px); /* 每行三个图片，每个图片之间有10px的间距 */
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.image-container img {
+  margin: 2px 2px 0 2px;
+  width: 100%;
+  height: auto;
+  cursor: pointer;
+  transition: box-shadow 0.3s ease;
+}
+
+.image-container img:hover {
+  box-shadow: 0 0 10px 5px rgba(0, 0, 0, 0.5); /* 添加黑色阴影效果 */
+}
+
+.image-container p {
+  margin-top: 5px;
+  font-size: 14px;
+  color: #333;
 }
 </style>

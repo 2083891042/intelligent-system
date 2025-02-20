@@ -4,7 +4,7 @@
 
 <template>
   <div class="iframe-container">
-    <iframe src="/public/index2.html"></iframe>
+    <iframe src="/index2.html"></iframe>
   </div>
 </template>
 
