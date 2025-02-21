@@ -1,5 +1,4 @@
 <script setup>
-import * as THREE from "three"
 import {
   Mesh,
   PerspectiveCamera,
@@ -10,22 +9,22 @@ import { Scene } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 import Lamborghini from '../assets/glb/Lamborghini.00aaaf55.glb'
-import girl from "../assets/glb/chinese girl.glb"
-import girl1 from "../assets/glb/business_girl.glb"
 import girl2 from "../assets/glb/psylocke_-fortnite.glb"
 import girl3 from "../assets/glb/scifi_girl_v.01.glb"
 import girl4 from "../assets/glb/sexy_toon_girl_model_2_tina_6.glb"
 import GUI from 'lil-gui';
 import TWEEN from '@tweenjs/tween.js';
 import icon from "../assets/语音.png"
-import {ref,watch} from "vue";
-import { useRouter } from 'vue-router';
+import {onMounted, ref, watch, onBeforeUnmount} from "vue";
+import { useRouter,useRoute } from 'vue-router';
 import {fetchImages} from "@/api/api.js";
-
-let carModel = null;
+import {useModelStore} from "@/store/modelStore.js";
+const modelStore = useModelStore()
 let scene, camera, renderer, controls;
 let doors = []
 let carStatus;
+let carModel = null;
+const route = useRoute()
 let isLoading = ref(false); // 添加 isLoading 状态
 let transcript = ref(''); // 添加 transcript 变量
 let isRecording = ref(false); // 添加 isRecording 状态
@@ -70,33 +69,119 @@ watch([activeName,drawer], ([newActiveName,newDrawer]) => {
 }, { immediate: true });
 
 const router = useRouter();
-// 车身材质
-let bodyMaterial = new THREE.MeshPhysicalMaterial({
-  // map:boyImages,
-  metalness: 1,
-  roughness: 0.5,
-  // 透明图层强度
-  clearcoat: 1.0,
-  // 透明涂层的粗糙度
-  clearcoatRoughness: 0.03,
-});
+
+// 检测声音
+let speakingThreshold = 0.15;
+let noiseThreshold = 0.3;
+// 获取麦克风权限并返回音频流
+async function getMicrophoneStream() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    return stream;
+  } catch (error) {
+    ElMessage.error('获取麦克风权限失败:', error);
+    throw error;
+  }
+}
+
+// 设置AudioContext和AnalyserNode进行音频分析
+async function setupAudioAnalysis() {
+  // 获取音频流
+  const stream = await getMicrophoneStream();
+  // 创建AudioContext
+  const audioContext = new AudioContext();
+  // 创建MediaStreamAudioSourceNode
+  const source = audioContext.createMediaStreamSource(stream);
+  // 创建AnalyserNode
+  const analyser = audioContext.createAnalyser();
+
+  // 设置AnalyserNode的参数
+  analyser.fftSize = 2048; // 快速傅里叶变换的大小
+  analyser.minDecibels = -90; // 最小分贝值
+  analyser.maxDecibels = -10; // 最大分贝值
+  analyser.smoothingTimeConstant = 0.85; // 平滑时间常数
+
+  // 连接音频流到AnalyserNode
+  source.connect(analyser);
+
+  // 获取数据数组的长度
+  const bufferLength = analyser.frequencyBinCount;
+  // 创建一个Float32Array来存储音频数据
+  const dataArray = new Float32Array(bufferLength);
+
+  // 实时分析音频数据
+  function analyzeAudio() {
+    // 获取时间域数据
+    analyser.getFloatTimeDomainData(dataArray);
+    // 计算音量
+    const volume = calculateVolume(dataArray);
+    console.log('音量:', volume);
+
+    // 根据音量判断是否在说话
+    if (volume > speakingThreshold && volume < noiseThreshold) { // 使用阈值0.15
+      ElMessage.success('正在监听....')
+      // 监听声音
+      const Assistant = async () => {
+        if(('webkitSpeechRecognition' in window)){
+          recognition = new webkitSpeechRecognition();
+          recognition.lang = 'zh-CN'; // 设置语言为中文
+          recognition.interimResults = false;
+          recognition.maxAlternatives = 1;
+
+          recognition.onstart = () => {
+            isRecording.value = true;
+          };
+
+          recognition.onresult = async (event) => {
+            // 获取用户想说的话
+            transcript.value = event.results[0][0].transcript;
+            // 把用户说的话传给AI
+            let message = await AI(transcript.value)
+            // console.log(message)
+            // 把AI说的话进行朗读
+            readTextFromFile(message)
+          };
+
+          recognition.onerror = (event) => {
+            console.error('语音识别错误:', event.error);
+            stopRecording();
+          };
+
+          recognition.onend = () => {
+            console.log('语音识别已结束');
+            stopRecording();
+          };
+
+          recognition.start();
+        } else {
+          console.error('浏览器不支持 这个功能');
+        }
+      }
+      return; // 停止进一步的监听
+    } else if (volume > noiseThreshold) {
+      ElMessage.info('声音太大了，请小点声音');
+    }else {
+      ElMessage.info('没有听见你说话');
+      return;
+    }
+  }
+
+  // 启动定时器，每隔五秒开始监听一次
+  setInterval(() => {
+    analyzeAudio(); // 开始监听
+  }, 5000);
+}
+
+// 计算音频信号的均方根（RMS）值
+function calculateVolume(dataArray) {
+  let sum = 0;
+  for (let i = 0; i < dataArray.length; i++) {
+    sum += dataArray[i] * dataArray[i];
+  }
+  return Math.sqrt(sum / dataArray.length);
+}
 
 
-// 玻璃材质
-let glassMaterial = new THREE.MeshPhysicalMaterial({
-  color: "#793e3e",
-  metalness: 0.25,
-  roughness: 0,
-  transmission: 1.0 //透光性.transmission属性可以让一些很薄的透明表面，例如玻璃，变得更真实一些。
-});
-// 轮胎材质
-let tireMaterial = new THREE.MeshPhysicalMaterial({
-  color:'#000000',
-  metalness: 0.1,  // 轻微金属光泽
-  roughness: 0.8,  // 表面较粗糙
-  clearcoat: 1.0,  // 添加透明涂层以增强光泽
-  clearcoatRoughness: 0.2 // 透明涂层的粗糙度
-})
 
 // 初始化场景
 function initscene(){
@@ -132,34 +217,76 @@ function initOrbitControls(){
   controls.minPolarAngle = 0
   controls.maxPolarAngle = 80 / 360 * 2 * Math.PI
 }
-// 绘制汽车模型
-function loadCarModel(){
-  isLoading.value = true
-  new GLTFLoader().load(girl,function (gltf){
-    carModel = gltf.scene
-    carModel.rotation.y = Math.PI * 0.7
-    // carModel.castShadow = true
-    carModel.traverse(obj => {
-      // console.log(typeof (obj.name))
-      if (obj.name === "Sub_0_a2:lambert16SG1_0") {
-        console.log(obj.name)
-        // 车身
-        obj.material = bodyMaterial
-
-      } else if (obj.name === 'Object_90') {
-        // 玻璃
-        obj.material = glassMaterial
-      } else if (obj.name === 'Empty001_16' || obj.name === 'Empty002_20') {
-        // 门
-        doors.push(obj)
-      }
-      // 产生阴影
-      obj.castShadow = true
-    })
-    scene.add(carModel)
-    isLoading.value = false
-  })
-}
+// 初始化模型
+onMounted( async ()=>{
+  isLoading.value = true;
+  console.log(route.meta)
+    await modelStore.loadModel('girl', 'src/assets/glb/chineseGirl.glb')
+        .then((gltf) => {
+          console.log(gltf)
+          if (gltf) {
+            carModel = gltf.scene;
+            console.log(carModel)
+            carModel.rotation.y = Math.PI * 0.7;
+            setupAudioAnalysis();
+            carModel.traverse(obj => {
+              obj.castShadow = true;
+            });
+            scene.add(carModel);
+            isLoading.value = false;
+          }
+        })
+        .catch((error) => {
+          ElMessage.error('模型加载失败:', error);
+          isLoading.value = false;
+        });
+})
+// // 销毁模型
+// onBeforeUnmount(() => {
+//   console.log('1111')
+//   if (carModel) {
+//     scene.remove(carModel);
+//   }
+// });
+// // 绘制汽车模型
+// function loadCarModel(){
+//   isLoading.value = true
+//   // new GLTFLoader().load(
+//   //     'src/assets/glb/chineseGirl.glb',
+//   //     (gltf) =>{
+//   //       carModel = gltf.scene
+//   //       carModel.rotation.y = Math.PI * 0.7
+//   //       // 检测声音
+//   //       setupAudioAnalysis()
+//   //       carModel.traverse(obj => {
+//   //         // 产生阴影
+//   //         obj.castShadow = true
+//   //       });
+//   //       scene.add(carModel)
+//   //       isLoading.value = false
+//   //     },
+//   //     (xhr) => console.log(`${(xhr.loaded / xhr.total) * 100}% loaded`)
+//   // )
+//
+//   modelStore.loadModel('girl', 'src/assets/glb/chineseGirl.glb')
+//       .then((gltf) => {
+//         console.log(gltf)
+//         if (gltf) {
+//           carModel = gltf.scene;
+//           carModel.rotation.y = Math.PI * 0.7;
+//           // setupAudioAnalysis();
+//           carModel.traverse(obj => {
+//             obj.castShadow = true;
+//           });
+//           scene.add(carModel);
+//           isLoading.value = false;
+//         }
+//       })
+//       .catch((error) => {
+//         ElMessage.error('模型加载失败:', error);
+//         isLoading.value = false;
+//       });
+// }
 
 
 // 绘制光源
@@ -210,7 +337,6 @@ function initSpotLight(){
   // 光照射的方向
   spotLight.target.position.set(0, 0, 0);
   spotLight.castShadow = true;
-  // spotLight.map = bigTexture
   scene.add(spotLight);
 }
 // 绘制圆柱体
@@ -227,65 +353,19 @@ let gui = null;
 // 绘制右侧面板
 function initGUI(){
   let obj = {
-    bodyColor:"#ffffff",
-    glassColor:"#793e3e",
-    tireColor:"#000000",
-    carOpen,
-    carClose,
     carIn,
     carOut,
-    loadCarModel,
     goFireworks
   }
   gui = new GUI()
-  if(gui){
-    gui.addColor(obj,"bodyColor").name('车身颜色').onChange(value => {
-      bodyMaterial.color.set(value)
-    })
-    gui.addColor(obj,"glassColor").name('玻璃颜色').onChange(value => {
-      glassMaterial.color.set(value)
-    })
-    gui.addColor(obj,"tireColor").name('轮胎颜色').onChange(value => {
-      tireMaterial.color.set(value)
-    })
-    gui.add(obj, "carOpen").name('打开车门')
-    gui.add(obj, "carClose").name('关门车门')
 
-    gui.add(obj, "carIn").name('车内视角')
-    gui.add(obj, "carOut").name('车外视角')
-    gui.add(obj, "loadCarModel").name('加载模型')
+    gui.add(obj, "carIn").name('前面视角')
+    gui.add(obj, "carOut").name('后面视角')
     gui.add(obj,"goFireworks").name('生成烟花')
-  }else {
-    gui.add(obj, "loadCarModel").name('加载模型')
-    gui.add(obj,"goFireworks").name('生成烟花')
-  }
   // 默认关闭
   gui.close()
 }
 
-// 打开车门
-function carOpen(){
-  carStatus = 'open'
-  for(let i = 0; i < doors.length;i++){
-    setAnimationDoor( {x:0} , {x:Math.PI/3} , doors[i])
-  }
-}
-// 关闭车门
-function carClose(){
-  carStatus = 'close'
-  for (let i = 0;i < doors.length;i++){
-    setAnimationDoor( {x:Math.PI/3} , {x:0} , doors[i])
-  }
-}
-// 设置门的动画
-function setAnimationDoor(start,end,mesh){
-  // start 起始位置 end 结束位置 mesh 模型
-  const Door = new TWEEN.Tween(start).to(end, 1000).easing(TWEEN.Easing.Quadratic.Out)
-  Door.onUpdate((that) => {
-    mesh.rotation.x = that.x
-  })
-  Door.start()
-}
 
 // 车内视角
 function carIn(){
@@ -369,8 +449,6 @@ window.addEventListener('click',function (event){
 })
 
 const boyClick = (image) =>{
-  console.log(image)
-  // console.log(typeof image)
  if (image === 1){
    isLoading.value = true
    new GLTFLoader().load(girl1,function (gltf){
@@ -424,6 +502,11 @@ const girlClick = (image) =>{
     })
   }
 }
+
+// 前往互动页面
+const goInter = () => {
+  router.push('/Inter');
+}
 </script>
 
 <template>
@@ -456,6 +539,7 @@ const girlClick = (image) =>{
                 <p>{{ image.name }}</p>
               </div>
            </div>
+           <el-button type="primary" @click="goInter">互动</el-button>
          </div>
        </el-tab-pane>
        <el-tab-pane label="女生" name="second">
@@ -469,6 +553,7 @@ const girlClick = (image) =>{
                <p>{{ image.name }}</p>
              </div>
            </div>
+           <el-button type="primary" @click="goInter">互动</el-button>
          </div>
        </el-tab-pane>
        <el-tab-pane label="动物" name="third">
@@ -482,6 +567,7 @@ const girlClick = (image) =>{
                <p>{{ image.name }}</p>
              </div>
            </div>
+           <el-button type="primary" @click="goInter">互动</el-button>
          </div>
        </el-tab-pane>
        <el-tab-pane label="创建角色" name="fourth">
