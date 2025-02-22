@@ -21,11 +21,11 @@ export default defineConfig({
     host:'0.0.0.0',
     port: 5173, // 前端端口号
     proxy: {
-      '/text/from': {
-        target: 'http://localhost:80', // 后端服务的实际地址
-        changeOrigin: true,
-        // rewrite: (path) => path.replace(/^\/text\/from\/list/, ''), // 重写路径，去掉 /text/from 前缀
-      },
+      // '/text/from': {
+      //   target: 'http://localhost:80', // 后端服务的实际地址
+      //   changeOrigin: true,
+      //   // rewrite: (path) => path.replace(/^\/text\/from\/list/, ''), // 重写路径，去掉 /text/from 前缀
+      // },
       // 前端地址为localhost:5173
       // 通过前端代理变成了当你请求/text/from/list时，也就是localhost:5173/text/from/list会变成localhost:80/text/from/list
       // 而下面的rewrite 就是去掉/text/from/list前缀，也就是localhost:5173/text/from/list会变成localhost:80/ 然后就会跳转到登录页面

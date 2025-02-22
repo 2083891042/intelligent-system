@@ -8,14 +8,9 @@ import {
 import { Scene } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
-import Lamborghini from '../assets/glb/Lamborghini.00aaaf55.glb'
-import girl2 from "../assets/glb/psylocke_-fortnite.glb"
-import girl3 from "../assets/glb/scifi_girl_v.01.glb"
-import girl4 from "../assets/glb/sexy_toon_girl_model_2_tina_6.glb"
 import GUI from 'lil-gui';
 import TWEEN from '@tweenjs/tween.js';
-import icon from "../assets/语音.png"
-import {onMounted, ref, watch, onBeforeUnmount} from "vue";
+import {onMounted, ref, watch} from "vue";
 import { useRouter,useRoute } from 'vue-router';
 import {fetchImages} from "@/api/api.js";
 import {useModelStore} from "@/store/modelStore.js";
@@ -70,118 +65,6 @@ watch([activeName,drawer], ([newActiveName,newDrawer]) => {
 
 const router = useRouter();
 
-// 检测声音
-let speakingThreshold = 0.15;
-let noiseThreshold = 0.3;
-// 获取麦克风权限并返回音频流
-async function getMicrophoneStream() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    return stream;
-  } catch (error) {
-    ElMessage.error('获取麦克风权限失败:', error);
-    throw error;
-  }
-}
-
-// 设置AudioContext和AnalyserNode进行音频分析
-async function setupAudioAnalysis() {
-  // 获取音频流
-  const stream = await getMicrophoneStream();
-  // 创建AudioContext
-  const audioContext = new AudioContext();
-  // 创建MediaStreamAudioSourceNode
-  const source = audioContext.createMediaStreamSource(stream);
-  // 创建AnalyserNode
-  const analyser = audioContext.createAnalyser();
-
-  // 设置AnalyserNode的参数
-  analyser.fftSize = 2048; // 快速傅里叶变换的大小
-  analyser.minDecibels = -90; // 最小分贝值
-  analyser.maxDecibels = -10; // 最大分贝值
-  analyser.smoothingTimeConstant = 0.85; // 平滑时间常数
-
-  // 连接音频流到AnalyserNode
-  source.connect(analyser);
-
-  // 获取数据数组的长度
-  const bufferLength = analyser.frequencyBinCount;
-  // 创建一个Float32Array来存储音频数据
-  const dataArray = new Float32Array(bufferLength);
-
-  // 实时分析音频数据
-  function analyzeAudio() {
-    // 获取时间域数据
-    analyser.getFloatTimeDomainData(dataArray);
-    // 计算音量
-    const volume = calculateVolume(dataArray);
-    console.log('音量:', volume);
-
-    // 根据音量判断是否在说话
-    if (volume > speakingThreshold && volume < noiseThreshold) { // 使用阈值0.15
-      ElMessage.success('正在监听....')
-      // 监听声音
-      const Assistant = async () => {
-        if(('webkitSpeechRecognition' in window)){
-          recognition = new webkitSpeechRecognition();
-          recognition.lang = 'zh-CN'; // 设置语言为中文
-          recognition.interimResults = false;
-          recognition.maxAlternatives = 1;
-
-          recognition.onstart = () => {
-            isRecording.value = true;
-          };
-
-          recognition.onresult = async (event) => {
-            // 获取用户想说的话
-            transcript.value = event.results[0][0].transcript;
-            // 把用户说的话传给AI
-            let message = await AI(transcript.value)
-            // console.log(message)
-            // 把AI说的话进行朗读
-            readTextFromFile(message)
-          };
-
-          recognition.onerror = (event) => {
-            console.error('语音识别错误:', event.error);
-            stopRecording();
-          };
-
-          recognition.onend = () => {
-            console.log('语音识别已结束');
-            stopRecording();
-          };
-
-          recognition.start();
-        } else {
-          console.error('浏览器不支持 这个功能');
-        }
-      }
-      return; // 停止进一步的监听
-    } else if (volume > noiseThreshold) {
-      ElMessage.info('声音太大了，请小点声音');
-    }else {
-      ElMessage.info('没有听见你说话');
-      return;
-    }
-  }
-
-  // 启动定时器，每隔五秒开始监听一次
-  setInterval(() => {
-    analyzeAudio(); // 开始监听
-  }, 5000);
-}
-
-// 计算音频信号的均方根（RMS）值
-function calculateVolume(dataArray) {
-  let sum = 0;
-  for (let i = 0; i < dataArray.length; i++) {
-    sum += dataArray[i] * dataArray[i];
-  }
-  return Math.sqrt(sum / dataArray.length);
-}
-
-
 
 // 初始化场景
 function initscene(){
@@ -223,12 +106,12 @@ onMounted( async ()=>{
   console.log(route.meta)
     await modelStore.loadModel('girl', 'src/assets/glb/chineseGirl.glb')
         .then((gltf) => {
-          console.log(gltf)
+          // console.log(gltf)
           if (gltf) {
             carModel = gltf.scene;
-            console.log(carModel)
+            // console.log(carModel)
             carModel.rotation.y = Math.PI * 0.7;
-            setupAudioAnalysis();
+            // setupAudioAnalysis();
             carModel.traverse(obj => {
               obj.castShadow = true;
             });
@@ -241,13 +124,6 @@ onMounted( async ()=>{
           isLoading.value = false;
         });
 })
-// // 销毁模型
-// onBeforeUnmount(() => {
-//   console.log('1111')
-//   if (carModel) {
-//     scene.remove(carModel);
-//   }
-// });
 // // 绘制汽车模型
 // function loadCarModel(){
 //   isLoading.value = true
@@ -268,25 +144,6 @@ onMounted( async ()=>{
 //   //     (xhr) => console.log(`${(xhr.loaded / xhr.total) * 100}% loaded`)
 //   // )
 //
-//   modelStore.loadModel('girl', 'src/assets/glb/chineseGirl.glb')
-//       .then((gltf) => {
-//         console.log(gltf)
-//         if (gltf) {
-//           carModel = gltf.scene;
-//           carModel.rotation.y = Math.PI * 0.7;
-//           // setupAudioAnalysis();
-//           carModel.traverse(obj => {
-//             obj.castShadow = true;
-//           });
-//           scene.add(carModel);
-//           isLoading.value = false;
-//         }
-//       })
-//       .catch((error) => {
-//         ElMessage.error('模型加载失败:', error);
-//         isLoading.value = false;
-//       });
-// }
 
 
 // 绘制光源
@@ -514,9 +371,10 @@ const goInter = () => {
    <div v-if="isLoading" class="loading-overlay">
      <div class="loading-spinner"></div>
    </div>
-   <div class="voice-assistant">
-     <img :src="icon" :class="{ 'recording': isRecording }" @click="toggleRecording" alt="语音" />
-   </div>
+<!--   <div class="voice-assistant" style="position: absolute;bottom: 26px;left: 26px;">-->
+<!--     <img v-if="isListening" src="../assets/语音.png" title="语音输入" @click="listen"/>-->
+<!--     <img  src="../assets/语音%20(1).png" title="停止语音输入"  @click="undoListen" v-else/>-->
+<!--   </div>-->
    <el-button type="info" style="position: absolute;bottom: 16px;right: 16px; " @click="drawer = true">
      更多角色
    </el-button>
@@ -606,18 +464,11 @@ const goInter = () => {
   100% { transform: rotate(360deg); }
 }
 
-/* 语音助手图标样式 */
-.voice-assistant {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-}
 
 .voice-assistant img {
   width: 30px; /* 设置图标大小 */
   height: 30px; /* 设置图标大小 */
   cursor: pointer;
-  position: relative;
 }
 
 /* 移动设备样式调整 */

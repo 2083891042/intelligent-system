@@ -1,5 +1,6 @@
 
 import { createRouter, createWebHistory } from 'vue-router'
+import {useModelStore} from "@/store/modelStore.js";
 const routes = [
     {
         path: '/',
@@ -20,6 +21,18 @@ const routes = [
         path:'/Inter',
         name:'虚拟人互动',
         component: ()=>import("@/components/Interaction/index.vue"),
+        beforeEnter:(to,from,next) =>{
+            const modelStore = useModelStore();
+            if (to.path === '/Inter') {
+                if (!modelStore.currentGltf) {
+                    next('/Car');
+                } else {
+                    next();
+                }
+            } else {
+                next();
+            }
+        }
     },
     {
         path: '/:pathMatch(.*)*',

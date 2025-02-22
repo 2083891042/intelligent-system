@@ -4,16 +4,15 @@ import request from './request';
 // 获取图片数据
 export function fetchImages() {
     return request({
-        url: '/text/from/images', // 相对路径
+        url: '/text/from/getImages', // 相对路径
         method: 'get',
     });
 }
 
 // 提交图片数据
-export function submitImage(data) {
+export function getAnimation() {
     return request({
-        url: '/text/from/images', // 相对路径
-        method: 'post',
-        data,
+        url: '/text/from/getAnimation', // 相对路径
+        method: 'get',
     });
 }
