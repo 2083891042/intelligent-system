@@ -10,12 +10,12 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 import GUI from 'lil-gui';
 import TWEEN from '@tweenjs/tween.js';
-import {onMounted, ref, watch} from "vue";
-import { useRouter,useRoute } from 'vue-router';
+import {onMounted, ref, watch, onUnmounted, toRefs} from "vue";
+import {useRouter, useRoute} from 'vue-router';
 import {fetchImages} from "@/api/api.js";
 import {useModelStore} from "@/store/modelStore.js";
 const modelStore = useModelStore()
-let scene, camera, renderer, controls;
+let scene, camera, renderer, controls = null;
 let doors = []
 let carStatus;
 let carModel = null;
@@ -73,21 +73,22 @@ function initscene(){
 
 // 初始化相机
 function initCamera(){
-  // fov?: number, aspect?: number, near?: number, far?: number
   camera = new PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000)
   camera.position.set(4.25, 1.4, -4.5)
 }
 
 // 初始化渲染器
 function initRenderer(){
-  renderer = new WebGLRenderer({
-    // 增加锯齿
-    antialias: true
-  })
-  renderer.setSize(window.innerWidth,window.innerHeight)
-  // 支持阴影
-  renderer.shadowMap.enabled = true
-  document.body.appendChild(renderer.domElement)
+  if (!renderer){
+    renderer = new WebGLRenderer({
+      // 增加锯齿
+      antialias: true
+    })
+    renderer.setSize(window.innerWidth,window.innerHeight)
+    // 支持阴影
+    renderer.shadowMap.enabled = true
+    document.body.appendChild(renderer.domElement)
+  }
 }
 // 初始化轨道
 function initOrbitControls(){
@@ -100,52 +101,82 @@ function initOrbitControls(){
   controls.minPolarAngle = 0
   controls.maxPolarAngle = 80 / 360 * 2 * Math.PI
 }
+// 从 pinia 中获取模型
+const currentGltf = modelStore.currentGltf;
 // 初始化模型
 onMounted( async ()=>{
+  init()
+  render()
   isLoading.value = true;
-  console.log(route.meta)
-    await modelStore.loadModel('girl', 'src/assets/glb/chineseGirl.glb')
-        .then((gltf) => {
-          // console.log(gltf)
-          if (gltf) {
-            carModel = gltf.scene;
-            // console.log(carModel)
-            carModel.rotation.y = Math.PI * 0.7;
-            // setupAudioAnalysis();
-            carModel.traverse(obj => {
-              obj.castShadow = true;
-            });
-            scene.add(carModel);
-            isLoading.value = false;
-          }
-        })
-        .catch((error) => {
-          ElMessage.error('模型加载失败:', error);
-          isLoading.value = false;
-        });
+  window.addEventListener('resize', handleResize)
+  if(!currentGltf){
+    try {
+      const gltf = await modelStore.loadModel('girl', '/glb/chineseGirl.glb')
+      carModel = gltf.scene;
+      carModel.rotation.y = Math.PI * 0.7;
+      carModel.traverse(obj => {
+        obj.castShadow = true;
+      });
+      scene.add(carModel);
+      isLoading.value = false;
+    }catch (err){
+      ElMessage.error('模型加载失败:', error);
+      isLoading.value = false;
+    }
+  }else {
+
+    // 克隆场景对象
+    carModel = currentGltf.scene.clone();
+
+    // 对克隆后的对象进行操作
+    carModel.rotation.y = Math.PI * 0.7;
+    carModel.traverse(obj => {
+      obj.castShadow = true;
+    });
+    scene.add(carModel);
+
+    // 标记加载完成
+    isLoading.value = false;
+  }
 })
-// // 绘制汽车模型
-// function loadCarModel(){
-//   isLoading.value = true
-//   // new GLTFLoader().load(
-//   //     'src/assets/glb/chineseGirl.glb',
-//   //     (gltf) =>{
-//   //       carModel = gltf.scene
-//   //       carModel.rotation.y = Math.PI * 0.7
-//   //       // 检测声音
-//   //       setupAudioAnalysis()
-//   //       carModel.traverse(obj => {
-//   //         // 产生阴影
-//   //         obj.castShadow = true
-//   //       });
-//   //       scene.add(carModel)
-//   //       isLoading.value = false
-//   //     },
-//   //     (xhr) => console.log(`${(xhr.loaded / xhr.total) * 100}% loaded`)
-//   // )
-//
 
+// 清理模型
+onUnmounted(() => {
+  if (renderId !== null) {
+    cancelAnimationFrame(renderId);
+  }
+  // 清理右侧面板
+  if (gui) {
+    gui.destroy();
+    gui = null;
+  }
+  // 从场景中移除模型
+  if (carModel) {
+    scene.remove(carModel);
+    carModel.traverse((object) => {
+      if (object.isMesh) {
+        if (object.geometry) {
+          object.geometry.dispose();
+        }
+        if (object.material) {
+          if (Array.isArray(object.material)) {
+            object.material.forEach(mat => mat.dispose());
+          } else {
+            object.material.dispose();
+          }
+        }
+      }
+    });
+    carModel = null;
 
+    // 移除画布
+    if (renderer) {
+      document.body.removeChild(renderer.domElement); // 移除画布
+      renderer.dispose();
+      renderer = null;
+    }
+  }
+})
 // 绘制光源
 function initLight(){
   // 添加环境光
@@ -264,99 +295,98 @@ function init(){
 }
 
 
-init()
-
+let renderId = null
 function render(time){
   // 动画
   renderer.render(scene, camera)
-  requestAnimationFrame(render)
+  renderId = requestAnimationFrame(render)
   TWEEN.update(time)
   controls.update()
 }
-render()
-
-window.addEventListener('resize', function () {
+function handleResize() {
   // camera
   camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
 
   // renderer
   renderer.setSize(window.innerWidth, window.innerHeight)
-})
-window.addEventListener('click',function (event){
-  let pointer = {}
-  pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-  pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
+}
 
-  var vector = new Vector2(pointer.x, pointer.y)
-  var raycaster = new Raycaster()
-  raycaster.setFromCamera(vector, camera)
-  let intersects = raycaster.intersectObjects(scene.children);
 
-  intersects.forEach((item) => {
-    if (item.object.name === 'Object_64' || item.object.name === 'Object_77') {
-      if (!carStatus || carStatus === 'close') {
-        carOpen()
-      } else {
-        carClose()
-      }
-      console.log(intersects)
-    }
-  })
-})
-
-const boyClick = (image) =>{
+const boyClick = async (image) =>{
  if (image === 1){
    isLoading.value = true
-   new GLTFLoader().load(girl1,function (gltf){
-     carModel = gltf.scene;
-     carModel.rotation.y = Math.PI * 0.7
-     carModel.traverse(obj => {
-       // console.log(obj)
-       if (obj.name === 'Object_103' || obj.name == 'Object_64' || obj.name == 'Object_77') {
-         // 车身
-         obj.material = bodyMaterial
-
-       } else if (obj.name === 'Object_90') {
-         // 玻璃
-         obj.material = glassMaterial
-       } else if (obj.name === 'Empty001_16' || obj.name === 'Empty002_20') {
-         // 门
-         doors.push(obj)
+   // 从场景中移除模型
+   if (carModel) {
+     scene.remove(carModel);
+     carModel.traverse((object) => {
+       if (object.isMesh) {
+         if (object.geometry) {
+           object.geometry.dispose();
+         }
+         if (object.material) {
+           if (Array.isArray(object.material)) {
+             object.material.forEach(mat => mat.dispose());
+           } else {
+             object.material.dispose();
+           }
+         }
        }
-       // 产生阴影
-       obj.castShadow = true
-     })
-     scene.add(carModel)
-     isLoading.value = false
-   })
+     });
+   }
+   carModel = null;
+   try {
+     const gltf = await modelStore.loadModel('boy', '/glb/business_girl.glb')
+     carModel = gltf.scene;
+     // console.log(carModel);
+     carModel.rotation.y = Math.PI * 0.7;
+     carModel.traverse(obj => {
+       obj.castShadow = true;
+     });
+     scene.add(carModel);
+     isLoading.value = false;
+   }catch (err){
+     ElMessage.error('模型加载失败:', error);
+     isLoading.value = false;
+   }
  }
 }
-const girlClick = (image) =>{
-  if (image.id === '1'){
+const girlClick = async (image) =>{
+  if (image === 2){
     isLoading.value = true
-    new GLTFLoader().load(girl,function (gltf){
-      carModel = gltf.scene
-      carModel.rotation.y = Math.PI
-
-      carModel.traverse(obj => {
-        if (obj.name === 'Object_103' || obj.name == 'Object_64' || obj.name == 'Object_77') {
-          // 车身
-          obj.material = bodyMaterial
-
-        } else if (obj.name === 'Object_90') {
-          // 玻璃
-          obj.material = glassMaterial
-        } else if (obj.name === 'Empty001_16' || obj.name === 'Empty002_20') {
-          // 门
-          doors.push(obj)
+    // 从场景中移除模型
+    if (carModel) {
+      scene.remove(carModel);
+      carModel.traverse((object) => {
+        if (object.isMesh) {
+          if (object.geometry) {
+            object.geometry.dispose();
+          }
+          if (object.material) {
+            if (Array.isArray(object.material)) {
+              object.material.forEach(mat => mat.dispose());
+            } else {
+              object.material.dispose();
+            }
+          }
         }
-        // 产生阴影
-        obj.castShadow = true
-      })
-      scene.add(carModel)
-      isLoading.value = false
-    })
+      });
+    }
+    carModel = null;
+    try {
+      const gltf = await modelStore.loadModel('girl', '/glb/psylocke_fortnite.glb')
+      carModel = gltf.scene;
+      // console.log(carModel);
+      carModel.rotation.y = Math.PI * 0.7;
+      carModel.traverse(obj => {
+        obj.castShadow = true;
+      });
+      scene.add(carModel);
+      isLoading.value = false;
+    }catch (err){
+      ElMessage.error('模型加载失败:', error);
+      isLoading.value = false;
+    }
   }
 }
 
@@ -364,17 +394,23 @@ const girlClick = (image) =>{
 const goInter = () => {
   router.push('/Inter');
 }
-</script>
+// 前往创建模型页面
+const goCreate = () => {
+  router.push('/generate');
+}
 
+</script>
 <template>
  <div>
    <div v-if="isLoading" class="loading-overlay">
      <div class="loading-spinner"></div>
    </div>
-<!--   <div class="voice-assistant" style="position: absolute;bottom: 26px;left: 26px;">-->
-<!--     <img v-if="isListening" src="../assets/语音.png" title="语音输入" @click="listen"/>-->
-<!--     <img  src="../assets/语音%20(1).png" title="停止语音输入"  @click="undoListen" v-else/>-->
-<!--   </div>-->
+   <el-button
+       type="primary"
+       style="position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);"
+       @click="goCreate">
+     新建角色
+   </el-button>
    <el-button type="info" style="position: absolute;bottom: 16px;right: 16px; " @click="drawer = true">
      更多角色
    </el-button>
@@ -383,7 +419,6 @@ const goInter = () => {
      <el-tabs
          v-model="activeName"
          type="card"
-         class="demo-tabs"
          @tab-click="handleClick"
      >
        <el-tab-pane label="男生" name="first">

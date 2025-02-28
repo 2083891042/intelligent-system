@@ -4,11 +4,15 @@ import {useModelStore} from "@/store/modelStore.js";
 const routes = [
     {
         path: '/',
-        name: '汽车模型',
-        component: ()=>import("@/components/Car.vue")
+        redirect: '/car'
     },
     {
-        path: '/Car',
+        path:'/User',
+        name:'用户登录',
+        component:()=>import("@/components/UserManagement/index.vue")
+    },
+    {
+        path: '/car',
         name: '虚拟人生成',
         component: ()=>import("@/components/Car.vue")
     },
@@ -18,7 +22,19 @@ const routes = [
         component: ()=>import("@/components/fireworks.vue"),
     },
     {
-        path:'/Inter',
+        path:'/generate',
+        name:'创建模型',
+        component:()=>import("@/components/Generate/index.vue"),
+        children:[
+            {
+                path:'upload',
+                name:'上传模型',
+                component:()=>import("@/components/Generate/upload.vue")
+            }
+        ]
+    },
+    {
+        path:'/inter',
         name:'虚拟人互动',
         component: ()=>import("@/components/Interaction/index.vue"),
         beforeEnter:(to,from,next) =>{
