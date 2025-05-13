@@ -1,58 +1,68 @@
 
 import { createRouter, createWebHistory } from 'vue-router'
-import {useModelStore} from "@/store/modelStore.js";
+import { useAuthStore } from '@/store/user.js';
 const routes = [
     {
         path: '/',
-        redirect: '/car'
+        redirect: '/home'
     },
     {
-        path:'/User',
-        name:'用户登录',
-        component:()=>import("@/components/UserManagement/index.vue")
+        path: '/login',
+        name: '用户登录',
+        component: () => import("@/components/UserManagement/index.vue"),
+        meta: { requiresAuth: false }
     },
     {
-        path: '/car',
-        name: '虚拟人生成',
-        component: ()=>import("@/components/Car.vue")
+        path: '/register',
+        name: '用户注册',
+        component: () => import('@/components/register/index.vue'),
+        meta: { requiresAuth: false }
     },
     {
-        path:'/fireworks',
-        name:'生成烟花',
-        component: ()=>import("@/components/fireworks.vue"),
+        path: '/home',
+        name: '用户主页',
+        component: () => import("@/components/home/home.vue"),
+        meta: { requiresAuth: false },
     },
     {
-        path:'/generate',
-        name:'创建模型',
-        component:()=>import("@/components/Generate/index.vue"),
-        children:[
+        path: '/fireworks',
+        name: '生成烟花',
+        component: () => import("@/components/fireworks.vue"),
+        meta: { requiresAuth: true }  // 需要认证的路由
+    },
+    {
+        path: '/personal',
+        name: '个人信息',
+        component: () => import("@/components/home/personal.vue"),
+        meta: { requiresAuth: true }
+    },
+    {
+        path: '/homepage',
+        name: '首页',
+        component: () => import('@/components/home/homePage.vue')
+    },
+    {
+        path: '/generate',
+        name: '创建模型',
+        component: () => import("@/components/Generate/index.vue"),
+        meta: { requiresAuth: true },
+        children: [
             {
-                path:'upload',
-                name:'上传模型',
-                component:()=>import("@/components/Generate/upload.vue")
+                path: 'upload',
+                name: '上传模型',
+                component: () => import("@/components/Generate/upload.vue"),
+                meta: { requiresAuth: true }  // 需要认证的路由
             }
         ]
     },
     {
-        path:'/inter',
-        name:'虚拟人互动',
-        component: ()=>import("@/components/Interaction/index.vue"),
-        beforeEnter:(to,from,next) =>{
-            const modelStore = useModelStore();
-            if (to.path === '/Inter') {
-                if (!modelStore.currentGltf) {
-                    next('/Car');
-                } else {
-                    next();
-                }
-            } else {
-                next();
-            }
-        }
+        path: '/inter',
+        name: '虚拟人互动',
+        component: () => import("@/components/Interaction/index.vue"),
     },
     {
         path: '/:pathMatch(.*)*',
-        component: () => import("@/components/Car.vue")
+        component: () => import("@/components/error/index.vue")
     }
 
 
@@ -63,17 +73,22 @@ const router = createRouter({
     history: createWebHistory(),
     routes
 })
-// // 导航守卫
-// router.beforeEach((to, from, next) => {
-//     if (to.name === '虚拟人生成') {
-//         if (!to.meta.visited) {
-//             to.meta.visited = true;
-//             console.log('First entry to the Car page');
-//         } else {
-//             console.log('Returning to the Car page');
-//         }
-//     }
-//     // console.log(to.meta.visited)
-//     next();
-// })
+// 全局前置守卫
+router.beforeEach(async (to, from, next) => {
+    const authStore = useAuthStore()
+    if (to.meta.requiresAuth) {
+        if (!authStore.token || authStore.isTokenTime()) {
+            authStore.logout()
+            next({
+                path: '/login',
+                query: { redirect: to.fullPath }
+            });
+        } else {
+            next();
+        }
+    } else {
+        next();
+    }
+})
+
 export default router

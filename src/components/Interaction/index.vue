@@ -21,7 +21,7 @@ onMounted(()=>{
     // 克隆场景对象
     carModel = gltf.scene.clone();
     // 对克隆后的对象进行操作
-    carModel.rotation.y = Math.PI * 0.7;
+    carModel.rotation.y = Math.PI / 2;
     carModel.traverse(obj => {
       obj.castShadow = true;
     });
@@ -439,7 +439,7 @@ watch([activeName,drawer], ([newActiveName,newDrawer]) => {
     <div class="loading-spinner"></div>
   </div>
   <div>
-    <el-button type="info" @click="form" style="position: absolute;top: 16px;left: 16px" >返回生成页面</el-button>
+    <el-button type="info" @click="form" style="position: absolute;top: 16px;left: 16px" >返回首页</el-button>
   </div>
   <div class="voice-assistant" style="position: absolute;bottom: 26px;left: 26px;">
     <img v-if="isListening" src="/img/语音.png" title="语音输入" @click="listen"/>

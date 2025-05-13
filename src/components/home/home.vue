@@ -10,12 +10,17 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 import GUI from 'lil-gui';
 import TWEEN from '@tweenjs/tween.js';
-import {onMounted, ref, watch, onUnmounted, toRefs} from "vue";
+import {onMounted, ref, watch, onUnmounted, toRefs, computed} from "vue";
 import {useRouter, useRoute} from 'vue-router';
-import {fetchImages} from "@/api/api.js";
+import {fetchImages, submit} from "@/api/api.js";
 import {useModelStore} from "@/store/modelStore.js";
 const modelStore = useModelStore()
-let scene, camera, renderer, controls = null;
+import { useAuthStore } from '@/store/user.js';
+let scene, camera, renderer, controls;
+import Personal from './personal.vue' // 引入个人信息组件
+const authStore = useAuthStore() // 获取用户登录状态
+const isLoggedIn = computed(() => authStore.token !== null)
+
 let doors = []
 let carStatus;
 let carModel = null;
@@ -24,7 +29,7 @@ let isLoading = ref(false); // 添加 isLoading 状态
 let transcript = ref(''); // 添加 transcript 变量
 let isRecording = ref(false); // 添加 isRecording 状态
 let recognition = null; // 语音识别实例
-import { ElMessage } from 'element-plus';
+import { ElMessage,ElMessageBox,ElLoading } from 'element-plus';
 // 图片信息
 let images = ref([]);
 // 男生信息
@@ -111,7 +116,7 @@ onMounted( async ()=>{
   window.addEventListener('resize', handleResize)
   if(!currentGltf){
     try {
-      const gltf = await modelStore.loadModel('girl', '/glb/chineseGirl.glb')
+      const gltf = await modelStore.loadModel('girl', '/glb/psylocke_fortnite.glb')
       carModel = gltf.scene;
       carModel.rotation.y = Math.PI * 0.7;
       carModel.traverse(obj => {
@@ -240,18 +245,11 @@ function initCylinder(){
 let gui = null;
 // 绘制右侧面板
 function initGUI(){
-  let obj = {
-    carIn,
-    carOut,
-    goFireworks
-  }
-  gui = new GUI()
-
-    gui.add(obj, "carIn").name('前面视角')
-    gui.add(obj, "carOut").name('后面视角')
-    gui.add(obj,"goFireworks").name('生成烟花')
-  // 默认关闭
-  gui.close()
+  return [
+    { label: "前面视角", action: carIn },
+    { label: "后面视角", action: carOut },
+    { label: "生成烟花", action: goFireworks }
+  ];
 }
 
 
@@ -267,7 +265,6 @@ function carOut(){
 function setAnimationCamera(start,end){
   const Camera = new TWEEN.Tween(start).to(end, 3000).easing(TWEEN.Easing.Quadratic.Out)
   Camera.onUpdate((that) => {
-    //  camera.postition  和 controls.target 一起使用
     camera.position.set(that.cx, that.cy, that.cz)
     controls.target.set(that.ox, that.oy, that.oz)
   })
@@ -291,7 +288,6 @@ function init(){
   initFloor()
   initSpotLight()
   initCylinder()
-  initGUI()
 }
 
 
@@ -307,9 +303,9 @@ function handleResize() {
   // camera
   camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-
-  // renderer
-  renderer.setSize(window.innerWidth, window.innerHeight)
+  if (renderer){
+    renderer.setSize(window.innerWidth, window.innerHeight)
+  }
 }
 
 
@@ -398,13 +394,168 @@ const goInter = () => {
 const goCreate = () => {
   router.push('/generate');
 }
+const userInfo = computed(() => authStore.userInfo);
+const handleCommand = (command) => {
+  if (command === 'profile') {
+    router.push('/personal')
+  } else if (command === 'logout') {
+    ElMessageBox.confirm(
+        '确定要退出登录吗？',
+        '提示',
+        {
+          confirmButtonText: '确认',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }
+    ).then(() => {
+      authStore.logout()
+      window.location.reload()
+    }).catch(() => {})
+  }
+}
+//右侧箭头
+const showRightPanel = ref(false)
+const guiOptions = ref(initGUI());
+
+//表单提交
+const showPublishForm = ref(false)
+const form = ref({
+  title: ''
+})
+
+const handlePublish = async () => {
+  // 校验
+  if (!form.value.title.trim()) {
+    ElMessage.warning('请输入标题')
+    return
+  }
+
+  // 获取用户ID
+  const userInfoStr = localStorage.getItem('userInfo')
+  const userInfo = JSON.parse(userInfoStr)
+  const params = {
+    userId: userInfo.userId,
+    personalName: userInfo.nickName,
+    deptId:userInfo.deptId,
+    title: form.value.title
+  }
+
+
+  // 发起请求
+  try {
+    const response = await submit(params)
+    if (response.code === 200) {
+      console.log(response)
+      ElMessage.success(response.msg)
+      // 清空表单
+      form.value.title = ''
+      showPublishForm.value = false
+    } else {
+      ElMessage.error(response.msg)
+    }
+  } catch (error) {
+    ElMessage.error('网络异常', error)
+  }
+}
 
 </script>
 <template>
  <div>
-   <div v-if="isLoading" class="loading-overlay">
-     <div class="loading-spinner"></div>
+   <el-loading v-if="isLoading" full-screen background="rgba(0, 0, 0, 0.7)" />
+   <div class="user-profile" v-if="isLoggedIn">
+     <el-dropdown @command="handleCommand" class="avatar-dropdown">
+      <span class="avatar-trigger">
+        <el-avatar :src="userInfo.avatar" :size="40" class="avatar"/>
+      </span>
+       <template #dropdown>
+         <el-dropdown-menu class="custom-dropdown">
+           <el-dropdown-item command="profile" divided>
+             <div class="menu-item">
+               <span class="icon el-icon-user"></span>
+               个人资料
+             </div>
+           </el-dropdown-item>
+           <el-dropdown-item command="logout" divided>
+             <div class="menu-item warning">
+               <span class="icon el-icon-switch-button"></span>
+               退出登录
+             </div>
+           </el-dropdown-item>
+         </el-dropdown-menu>
+       </template>
+     </el-dropdown>
    </div>
+
+  <div class="home-header">
+    <router-link to="/homepage" class="bilibili-home">
+      <span>首页</span>
+    </router-link>
+  </div>
+
+   <el-button
+       class="publish-btn"
+       @click="showPublishForm = true"
+       icon="edit"
+   >
+     发布模型
+   </el-button>
+
+   <!-- 发布表单弹窗 -->
+   <el-dialog
+       v-model="showPublishForm"
+       title="发布模型"
+       width="400px"
+       :close-on-click-modal="false"
+   >
+     <el-form @submit.prevent="handlePublish">
+       <el-form-item label="模型标题">
+         <el-input
+             v-model="form.title"
+             placeholder="给你的模型命名吧~"
+             maxlength="50"
+             show-word-limit
+         />
+       </el-form-item>
+
+       <div class="dialog-footer">
+         <el-button @click="showPublishForm = false">取消</el-button>
+         <el-button type="primary" @click="handlePublish" :disabled="!form.title.trim()">
+           确认发布
+         </el-button>
+       </div>
+     </el-form>
+   </el-dialog>
+
+
+   <el-button
+       class="right-panel-trigger"
+       @click="showRightPanel = true"
+   >
+     <img src="/public/img/箭头.png" alt="展开面板" />
+   </el-button>
+
+   <!-- 新增侧边面板 -->
+   <el-drawer
+       v-model="showRightPanel"
+       direction="rtl"
+       size="300px"
+       :with-header="false"
+       class="right-panel-drawer"
+   >
+     <div class="panel-content">
+       <h3>视角控制</h3>
+       <div class="gui-buttons">
+         <el-button
+             v-for="(item, index) in guiOptions"
+             :key="index"
+             @click="item.action"
+             block        style="margin-bottom: 8px"
+         >
+           {{ item.label }}
+         </el-button>
+       </div>
+    </div>
+   </el-drawer>
    <el-button
        type="primary"
        style="position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);"
@@ -471,34 +622,6 @@ const goCreate = () => {
 </template>
 
 <style scoped>
-/* 加载中动画样式 */
-.loading-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.loading-spinner {
-  border: 16px solid #f3f3f3;
-  border-top: 16px solid #3498db;
-  border-radius: 50%;
-  width: 120px;
-  height: 120px;
-  animation: spin 2s linear infinite;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
 
 .voice-assistant img {
   width: 30px; /* 设置图标大小 */
@@ -542,5 +665,159 @@ const goCreate = () => {
   margin-top: 5px;
   font-size: 14px;
   color: #333;
+}
+.publish-btn {
+  width: 80px;
+  position: fixed;
+  right: 20px;
+  top: 16px;
+  z-index: 999;
+  background-color: #409EFF;
+  color: white;
+}
+
+.publish-btn:hover {
+  background-color: #228df9;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.panel-content h3 {
+  margin-top: 0;
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  border-left: 4px solid #409EFF;
+  padding-left: 10px;
+  color: #333;
+}
+
+.gui-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gui-buttons .el-button {
+  width: 100%;
+  text-align: center;
+  font-weight: 500;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background-color: #f5f7fa;
+  color: #333;
+  transition: all 0.2s ease;
+}
+
+.gui-buttons .el-button:hover {
+  background-color: #eef1f6;
+  transform: translateX(4px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+
+.right-panel-trigger {
+  position: fixed;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease-in-out;
+  z-index: 999;
+  border: 1px solid #e4e4e4;
+}
+
+.right-panel-trigger:hover {
+  transform: translateY(-50%) scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.right-panel-trigger img {
+  width: 24px;
+  height: 24px;
+  display: block;
+  margin: 12px auto;
+  transition: opacity 0.2s ease;
+}
+
+.right-panel-trigger:hover img {
+  opacity: 0.9;
+}
+
+.avatar-dropdown {
+  position: absolute;
+  display: inline-block;
+  cursor: pointer;
+}
+
+.custom-dropdown {
+  min-width: 100px;
+  border-radius: 8px;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+  background: #fff;
+  padding: 8px;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  transition: background 0.3s;
+}
+
+.menu-item.warning {
+  color: #f56c6c;
+}
+
+.menu-item:hover {
+  background: #f5f7fa;
+}
+
+.icon {
+  font-size: 18px;
+}
+
+/* 头像容器样式 */
+.avatar-trigger {
+  display: inline-block;
+  position: absolute;
+  margin: 16px;
+}
+
+.avatar {
+  transition: transform 0.3s;
+}
+
+.avatar-trigger:hover .avatar {
+  transform: rotate(360deg);
+}
+
+.home-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 16px;
+  z-index: 999;
+}
+
+.bilibili-home {
+  display: flex;
+  align-items: center;
+  color: #00a1d6;
+  font-weight: bold;
+  text-decoration: none;
+  transition: opacity 0.3s;
+}
+
+.bilibili-home:hover {
+  opacity: 0.8;
 }
 </style>

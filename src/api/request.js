@@ -3,16 +3,21 @@ import axios from 'axios';
 
 // 创建 axios 实例
 const service = axios.create({
-    baseURL: 'http://localhost:80', // 替换为你的后端 API 地址
+    baseURL: 'http://localhost:8080', // 替换为你的后端 API 地址
     timeout: 5000, // 请求超时时间
 });
+
+const getToken = () => {
+    // 从 localStorage 获取 token
+    const token = localStorage.getItem('token')
+    return token
+  }
 
 // 请求拦截器
 service.interceptors.request.use(
     config => {
-        // 在发送请求之前做些什么
-        // 例如，添加 token
-        // config.headers['Authorization'] = 'Bearer ' + getToken();
+        const token = getToken()
+        config.headers['Authorization'] = 'Bearer ' + getToken();
         return config;
     },
     error => {
